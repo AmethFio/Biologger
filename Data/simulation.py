@@ -13,7 +13,7 @@ def generate_24h_data(start_time=None, avg_interval=30):
     if start_time is None:
         start_time = int(time.time()) - 86400  # Default to 24 hours ago
     
-    activities = ["walking", "sitting", "running", "sleeping", "standing"]
+    activities = [0, 1, 2, 3, 4]
     data = []
     
     timestamp = start_time
