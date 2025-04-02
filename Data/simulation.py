@@ -2,7 +2,7 @@ import cbor2
 import zstandard as zstd
 import random
 import time
-
+# What
 # Simulate 24 hours of activity recognition data
 def generate_24h_data(start_time=None, avg_interval=30):
     """Generate simulated activity data for 24 hours.
