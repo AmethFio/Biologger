@@ -103,5 +103,3 @@ print(f"Deltas <= 255: {show_single_byte(simulated_data[1:], 255)} entries")
 print(f"Uint8 + CBOR2 Compressed Size: {len(re_compressed_data)} bytes")
 print(f"Compression Ratio: {len(re_compressed_data) / len(cbor2.dumps(to_native(simulated_data))):.2%}")
 
-
-
