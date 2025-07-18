@@ -1,0 +1,143 @@
+（概要）
+　　UARTEStream.hは、DMA用に用意されたUARTEをSerialのような形で利用できるようにする関数です。
+　　特徴として、スタート時にTX、RXピンを指定することができる点があげられます。
+　　プログラム内でも、一度end()すれば、これまで使っていたのと異なるGPIOピンをTX、RXに指定できます。
+　　また、DMA的な利用もできます。受信バッファを多めに指定すれば、スリープ時でも、
+　　受信バッファ分のデータ受信を行い、受信バッファがいっぱいになると、イベントハンドラが立ち上がり、
+　　リングバッファへデータを移行します。
+（設定）
+　●nrfx_config.hを変更
+　　　・AdafruitFeather nRF52840Expressの場合（追加）
+　　　　ファイルの場所
+　　　　　･･･\(ユーザー名)\AppData¥Local\Arduino15\packages\adafruit\hardware\nrf52\(バージョン　ex:1.7.0)\cores\nRF5\nordic
+　　　　追加内容
+　　　　　// <e> NRFX_UARTE_ENABLED - nrfx_uarte - UARTE peripheral driver
+　　　　　//==========================================================
+　　　　　#if !defined(NRFX_UARTE_ENABLED)
+　　　　　#define NRFX_UARTE_ENABLED 1
+　　　　　#endif
+
+　　　　　// <q> NRFX_UARTE0_ENABLED - Enable UARTE0 instance
+
+　　　　　#if !defined NRFX_UARTE0_ENABLED
+　　　　　#define NRFX_UARTE0_ENABLED 0
+　　　　　#endif
+
+　　　　　// <q> NRFX_UARTE1_ENABLED - Enable UARTE1 instance
+
+　　　　　#if !defined NRFX_UARTE1_ENABLED
+　　　　　#define NRFX_UARTE1_ENABLED 1
+　　　　　#endif
+
+
+　　　　　//割込み優先度のデフォルト設定を追加
+　　　　　#if !defined(NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY)
+　　　　　#define NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY 6
+　　　　　#endif
+　　　・XIAO nRF52840の場合（変更）
+　　　　ファイルの場所
+　　　　　･･･\(ユーザー名)\AppData¥Local\Arduino15\packages\Seeduino¥hardware\nrf52\(バージョン　ex:1.1.10)\cores\nRF5\nordic
+　　　　変更内容
+　　　　　上の追加内容に該当する部分の値を変更
+　　　　　#define NRFX_UARTE_ENABLED 0　→　#define NRFX_UARTE_ENABLED 1
+　　　　　#define NRFX_UARTE1_ENABLED 0　→　#define NRFX_UARTE1_ENABLED 1
+　　　　　#define NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY 7　→　#define NRFX_UARTE_DEFAULT_CONFIG_IRQ_PRIORITY 6
+　●ライブラリを使うための環境設定
+　　　・ファイルの置き場所
+　　　　.inoファイルがある同じフォルダに以下の3ファイルをおく
+　　　　　UARTEStream.h
+　　　　　UARTEStream.cpp
+　　　　　nrfx_uarte.c
+　　　・ライブラリのinclude
+        .inoファイルの冒頭に
+　　　・オブジェクトの生成
+　　　　UARTEStream SerialUART;
+　　　　のように、機能を利用するにあたり、オブジェクトを生成する必要があります。
+　　　・注意事項
+　　　　UARTEStreamはnRF52840が2つもつHW UARTの1つを利用します。
+　　　　これは、ARDUINO IDEのSerial1でも使われているため、UARTEStream使用時に、
+　　　　Serial1.beginをすると誤動作をします。
+（ライブラリのコマンド）
+  ### 基本制御
+   ・begin(uint32_t tx, uint32_t rx, uint32_t baudrate, size_t rx_chunk_size)
+　　（真偽値型　bool)
+　　　概要：UARTE1 の初期化と受信開始を行う。
+　　　引数：
+　　　　tx: TX ピン番号
+　　　　rx: RX ピン番号
+        ※ピン番号とGPIOの対応表は別ファイル参照
+　　　　baudrate: 通信速度（例：9600, 115200 など）
+　　　　rx_chunk_size: UARTE受信チャンクサイズ（1〜64）※受信バッファの容量(byte)
+　　　戻り値：初期化成功時に true、失敗時に false
+　　　備考：シリアルのように使う場合は、rx_chunk_sizeは1に設定する。
+　　　　　　rx_cunk_sizeで指定された受信バッファのデータは、いっぱいにならないかぎり、
+　　　　　　読み出されない、
+　　　　　　（GPSなどのように、ペリフェラルが一方的にデータを送信してくる接続向き）
+　　　　　　終了時、開始時にに受信バッファは初期化される。
+
+　　・end()
+　　　（戻り値無し関数　void型)
+　　　概要：UARTE1 の終了処理を行い、受信を停止する。
+　　　引数：なし
+　　　戻り値：なし
+　　　備考：受信バッファ初期化
+
+　### 読み込み関連
+　　・available()
+　　　（整数型　int型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：リングバッファ内の読み取り可能なバイト数を返す。
+　　　引数：なし
+　　　戻り値：利用可能なバイト数（int）
+
+　　・read()
+　　　（整数型　int型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：リングバッファから1バイトを読み出す。
+　　　引数：なし
+　　　戻り値：読み出したバイト（0〜255）／読み出し失敗時は -1
+
+　　・readBytes(char *buffer, size_t length)
+　　　（符号なし整数型　size_t型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：指定バイト数だけデータを読み込む。
+　　　引数：
+　　　　buffer: 読み出したデータを格納する配列
+　　　　length: 読み出す最大バイト数
+　　　　戻り値：実際に読み出したバイト数
+
+　　・readString()
+　　　（文字列型　string型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：リングバッファ内の全内容を文字列として取得。
+　　　引数：なし
+　　　戻り値：取得した文字列
+
+　　・readStringUntil(char terminator)
+　　　（文字列型　string型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：終端文字までの文字列を取得。
+　　　引数：
+　　　　terminator: 終了判定に使う1文字(改行指定の場合は\n等）
+　　　戻り値：取得した文字列（terminator を含む）
+
+　　・flush()
+　　　（戻り値なし関数型　void型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：リングバッファと未転送の RX バッファをクリア。
+　　　引数：なし
+　　　戻り値：なし
+
+　### 書き込み関連
+　　・write(uint8_t data)
+　　　（符号なし整数型　size_t型：　ARDUINO streamクラスをオーバーライド）
+　　　概要：UARTE 経由で1バイト送信。
+　　　引数：
+　　　　data: 送信するバイト
+　　　戻り値：常に 1（成功）
+
+　　・size_t print(...) / println(...) (複数のオーバーロードあり、下例参照)
+　　　（符号なし整数型　size_t型：　ARDUINO print()／println() 関数をオーバーライド）
+　　　概要：TXポートからデータを送信
+　　　例：
+　　　　print("Hello")
+　　　　println(123)
+　　　　println(3.14, 2)（小数点以下2桁)
+　　　　print(myFloat, 2)
+　　　　print('A')
+　　　　print(65, HEX)
+　　　　print(myString)
