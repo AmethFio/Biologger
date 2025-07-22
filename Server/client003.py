@@ -63,17 +63,21 @@ def generate_24h_data(start_time=None):
 
 def serialize_data(data):
     seq = []
+    start_ts = data[0]["t"] # Absolute timestamp
     for item in data:
-        t = item["t"]
-        a = item["a"] if item["a"] is not None else -1      # The first timestamp is activity -1
-        seq.extend([t, a])
+        if item["a"] is None:
+            a = -1
+            delta_t = 0
+        else:
+            delta_t = item["t"]
+            a = item["a"]      # The first timestamp is activity -1
+        seq.append((delta_t, a))
 
     print(f"First 20 bytes of serialized data: {seq[:20]}")
-    return seq
 
-def binarize_data(data):
-    binary = b''.join(
-        struct.pack(">Hb", delta_t, a) for delta_t, a in data
+    binary = struct.pack(">I", start_ts)  # 4 字节起始时间
+    binary += b''.join(
+        struct.pack(">Hb", delta_t, a) for delta_t, a in seq
     )
     return binary
 
@@ -91,8 +95,7 @@ def send_post():
 
     simu_data = generate_24h_data()
     serial_data = serialize_data(simu_data)
-    bin_data = binarize_data(serial_data)
-    data_bytes = compress_data(bin_data)
+    data_bytes = compress_data(serial_data)
 
     hmac_value = compute_hmac(timestamp, DEVICE_ID, data_bytes)
 

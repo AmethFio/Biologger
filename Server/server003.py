@@ -9,6 +9,7 @@ import heatshrink2
 from datetime import datetime
 
 import struct
+import csv
 
 app = Flask(__name__)
 
@@ -37,20 +38,25 @@ def verify_hmac(device_id: str, timestamp: int, data_bytes: bytes, recv_hmac: st
     return hmac.compare_digest(expected_hmac, recv_hmac)
 
 def deserialize(binary):
+    assert (len(binary) - 4) % 3 == 0
+    start_ts, = struct.unpack(">I", binary[:4])
     data = []
-    timestamp = 0
-    for i in range(0, len(binary), 3):
-        delta_t, a = struct.unpack(">Hb", binary[i:i+3])
+    timestamp = start_ts
+    seq_bytes = binary[4:]
+
+    for i in range(0, len(seq_bytes), 3):
+        delta_t, a = struct.unpack(">Hb", seq_bytes[i:i+3])
         timestamp += delta_t
         data.append({
             "t": timestamp,
+            "delta_t": delta_t,
             "a": None if a == -1 else a
         })
     return data
 
 def save_to_csv(data, path):
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["t", "a"])
+        writer = csv.DictWriter(f, fieldnames=["t", "delta_t", "a"])
         writer.writeheader()
         for row in data:
             writer.writerow(row)
@@ -80,10 +86,10 @@ def receive_data():
     if not verify_hmac(device_id, timestamp, data_bytes, recv_hmac):
         return jsonify({"error": "Invalid HMAC"}), 403
 
-    app.logger.info(f"Valid payload from {device_id} → First 20 bytes: {serial_data[:20]}")
+    app.logger.info(f"Valid payload from {device_id} → First 20 bytes: {raw_data[:20]}")
 
     # 保存 csv 文件
-    filename = os.path.join(UPLOAD_DIR, f"{device_id}_{timestamp}.zip")
+    filename = os.path.join(UPLOAD_DIR, f"{device_id}_{timestamp}.csv")
     save_to_csv(raw_data, filename)
 
     return jsonify({"status": "OK"}), 200
