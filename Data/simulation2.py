@@ -1,11 +1,25 @@
-import cbor2
-import zstandard as zstd
 import random
 import time
 import numpy as np
-# What
+
+activities = [0, 1, 2, 3, 4]
+prior = [0.2, 0.1, 0.4, 0.2, 0.1]
+gauss_prarams = [
+    (50, 20), (100, 30), (30, 10), (70, 25), (40, 15)
+]
+
+# Sample activity
+def sample_activity():
+    r = np.random.uniform(0, 1)
+    prob = 0.
+    for i in range(5):
+        prob += prior[i]
+        if r <= prob:
+            return i
+    return i
+
 # Simulate 24 hours of activity recognition data
-def generate_24h_data(start_time=None, avg_interval=60):
+def generate_24h_data(start_time=None):
     """Generate simulated activity data for 24 hours.
     
     - `start_time`: Start timestamp (default: now).
@@ -14,25 +28,16 @@ def generate_24h_data(start_time=None, avg_interval=60):
     if start_time is None:
         start_time = int(time.time()) - 86400  # Default to 24 hours ago
     
-    activities = [0, 1, 2, 3, 4]
+
     data = []
     data.append({"t": start_time, "a": None})
 
     timestamp = start_time
-    tmp_act = None
-    tmp_delta = 0
     while timestamp < start_time + 86400:  # 24 hours worth of data
-        label = random.choice(activities)
-        delta = max(1, int(random.gauss(avg_interval, 5)))  # Gaussian distribution around avg_interval
+        label = sample_activity()
+        delta = max(1, int(random.gauss(*gauss_prarams[label])))  # Gaussian distribution around avg_interval
         timestamp += delta
-        if label != tmp_act:
-            if tmp_delta == 0:
-                tmp_delta = delta
-            data.append({"t": tmp_delta, "a": label})  # Only record the starting timestamp
-            tmp_act = label
-            tmp_delta = 0
-        else:
-            tmp_delta += delta
+        data.append({"t": delta, "a": label})  # Only record the starting timestamp
     
     return data
 
@@ -77,29 +82,4 @@ def show_double_byte(re_data, th=23):
 
 def show_single_byte(re_data, th=23):
     return sum(1 for d in re_data[1:] if d["t"] <= th)
-
-# Example usage
-simulated_data = generate_24h_data(avg_interval=10)  # Avg 10s interval between events
-re_data = single_byte_data(simulated_data)
-compressed_data = compress_data(simulated_data)
-decompressed_data = decompress_data(compressed_data)
-re_compressed_data = compress_data(re_data)
-
-pr = '\n'.join('t: '+str(d["t"])+' a: ' + str(d["a"]) for d in decompressed_data[:5])
-
-# Print size reduction
-print(f"Total events: {len(simulated_data) - 1}")
-print(f"First 5 entries in decompressed data:\n{pr}")
-print(f"Longest duration: {show_max_delta(simulated_data[1:])}")
-
-print(f"Deltas > 23: {show_double_byte(simulated_data[1:])} entries")
-print(f"Deltas <= 23: {show_single_byte(simulated_data[1:])} entries")
-print(f"Original Size: {len(cbor2.dumps(to_native(simulated_data)))} bytes")
-print(f"CBOR2 Compressed Size: {len(compressed_data)} bytes")
-print(f"Compression Ratio: {len(compressed_data) / len(cbor2.dumps(to_native(simulated_data))):.2%}")
-
-print(f"Deltas > 255: {show_double_byte(simulated_data[1:], 255)} entries")
-print(f"Deltas <= 255: {show_single_byte(simulated_data[1:], 255)} entries")
-print(f"Uint8 + CBOR2 Compressed Size: {len(re_compressed_data)} bytes")
-print(f"Compression Ratio: {len(re_compressed_data) / len(cbor2.dumps(to_native(simulated_data))):.2%}")
 
