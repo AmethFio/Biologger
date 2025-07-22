@@ -50,8 +50,20 @@ def deserialize(binary):
         data.append({
             "t": timestamp,
             "delta_t": delta_t,
-            "a": None if a == -1 else a
+            "a": a
         })
+
+    # More compact
+    # for i in range(0, len(seq_bytes), 3):
+    #     packed = (seq_bytes[i] << 16) | (seq_bytes[i+1] << 8) | seq_bytes[i+2]
+    #     a = packed & 0x07
+    #     delta_t = packed >> 3
+    #     timestamp += delta_t
+    #     data.append({
+    #         "t": timestamp,
+    #         "delta_t": delta_t,
+    #         "a": a
+    #     })
     return data
 
 def save_to_csv(data, path):

@@ -19,13 +19,16 @@ SECRET_KEY = b"sensingteam"
 SERVER_URL = "http://54.253.68.173:80/data"
 
 
-activities = [0, 1, 2, 3, 4]
+activities = [1, 2, 3, 4, 5]
 prior = [0.2, 0.1, 0.4, 0.2, 0.1]
-gauss_prarams = [
-    (50, 20), (100, 30), (30, 10), (70, 25), (40, 15)
-]
-gauss_params_std = [
-    (50, 4.47), (100, 5.48), (30, 3.16), (70, 5), (40, 3.87)
+# gauss_prarams = [
+#     (50, 20), (100, 30), (30, 10), (70, 25), (40, 15)
+# ]
+# gauss_params_std = [
+#     (50, 4.47), (100, 5.48), (30, 3.16), (70, 5), (40, 3.87)
+# ]
+uniform_params = [
+    (5, 25), (10, 60), (1, 15), (10, 31), (5, 95)
 ]
 
 # Sample activity
@@ -48,30 +51,21 @@ def generate_24h_data(start_time=None):
     if start_time is None:
         start_time = int(time.time()) - 86400  # Default to 24 hours ago
     
-
     data = []
-    data.append({"t": start_time, "a": None})
+    data.append({"t": 0, "a": 0})
 
-    timestamp = start_time
-    while timestamp < start_time + 86400:  # 24 hours worth of data
+    total_elapsed = 0
+    while total_elapsed < 86400:  # 24 hours worth of data
         label = sample_activity()
-        delta = max(1, int(np.random.normal(*gauss_prarams[label])))  # Gaussian distribution around avg_interval
-        timestamp += delta
+        # delta = max(1, int(np.random.normal(*gauss_params_std[label])))  # Gaussian distribution around avg_interval # May cause overflow
+        delta = int(np.random.uniform(*uniform_params[label]))
         data.append({"t": delta, "a": label})  # Only record the starting timestamp
+        total_elapsed += delta
     
-    return data
+    return start_time, data
 
-def serialize_data(data):
-    seq = []
-    start_ts = data[0]["t"] # Absolute timestamp
-    for item in data:
-        if item["a"] is None:
-            a = -1
-            delta_t = 0
-        else:
-            delta_t = item["t"]
-            a = item["a"]      # The first timestamp is activity -1
-        seq.append((delta_t, a))
+def serialize_data(start_ts, data):
+    seq = [(item["t"], item["a"]) for item in data]
 
     print(f"First 20 bytes of serialized data: {seq[:20]}")
 
@@ -79,10 +73,20 @@ def serialize_data(data):
     binary += b''.join(
         struct.pack(">Hb", delta_t, a) for delta_t, a in seq
     )
+
+    # More compact
+    # for delta_t, a in seq:
+    #     # 编码 24 位
+    #     packed = (delta_t << 3) | (a & 0x07)
+    #     binary += bytes([
+    #         (packed >> 16) & 0xFF,
+    #         (packed >> 8) & 0xFF,
+    #         packed & 0xFF
+    #     ])
     return binary
 
 def compress_data(data):
-    compressed_data = heatshrink2.compress(data)
+    compressed_data = heatshrink2.compress(data, window_sz2=4, lookahead_sz2=3)
     return compressed_data
 
 def compute_hmac(timestamp: int, device_id: str, payload_bytes: bytes) -> str:
@@ -93,8 +97,8 @@ def compute_hmac(timestamp: int, device_id: str, payload_bytes: bytes) -> str:
 def send_post():
     timestamp = int(time.time())
 
-    simu_data = generate_24h_data()
-    serial_data = serialize_data(simu_data)
+    start_time, simu_data = generate_24h_data()
+    serial_data = serialize_data(start_time, simu_data)
     data_bytes = compress_data(serial_data)
 
     hmac_value = compute_hmac(timestamp, DEVICE_ID, data_bytes)
@@ -106,6 +110,7 @@ def send_post():
         "hmac": hmac_value
     }
 
+    print(f"Total Entries: {len(simu_data)}")
     print(f"Original Size: {len(serial_data)} bytes")
     print(f"Compressed Size: {len(data_bytes)} bytes")
     print(f"Compression Ratio: {len(data_bytes) / len(serial_data):.2%}")
@@ -115,6 +120,7 @@ def send_post():
 
     print("Return:", resp.status_code)
     print("Response:", resp.text)
+    return simu_data
 
 if __name__ == "__main__":
     send_post()
