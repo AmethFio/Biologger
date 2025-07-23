@@ -11,6 +11,9 @@ from datetime import datetime
 import struct
 import csv
 
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+
 app = Flask(__name__)
 
 DEVICE_KEYS = {
@@ -19,16 +22,30 @@ DEVICE_KEYS = {
     "nrf52840": b"greatkey",
 }
 
+AES_KEY = b'secretkey1234567'
+
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def verify_hmac(device_id: str, timestamp: int, data_bytes: bytes, recv_hmac: str) -> bool:
+def verify_hmac(device_id: str, timestamp: int, data_bytes: str, recv_hmac: str) -> bool:
     key = DEVICE_KEYS.get(device_id)
     if not key:
         app.logger.warning(f"Unknown device_id: {device_id}")
         return False
 
-    message = str(timestamp).encode() + device_id.encode() + data_bytes
+    # 拼出来的 message
+    ts_part = str(timestamp).encode()
+    id_part = device_id.encode()
+    data_part = base64.b64decode(data_bytes)
+    message = ts_part + id_part + data_part
+
+    # 打印长度
+    app.logger.info(f"Service-side ts_part length: {len(ts_part)}")
+    app.logger.info(f"Service-side id_part length: {len(id_part)}")
+    app.logger.info(f"Service-side data_part length: {len(data_part)}")
+    app.logger.info(f"Service-side total message length: {len(message)}")
+
+    message = str(timestamp).encode() + device_id.encode() + base64.b64decode(data_bytes)
     expected_digest = hmac.new(key, message, hashlib.sha256).digest()
     expected_hmac = base64.b64encode(expected_digest).decode()
 
@@ -36,6 +53,13 @@ def verify_hmac(device_id: str, timestamp: int, data_bytes: bytes, recv_hmac: st
     app.logger.info(f"Received HMAC: {recv_hmac}")
 
     return hmac.compare_digest(expected_hmac, recv_hmac)
+    
+def aes_decrypt(encrypted: str) -> bytes:
+    data = base64.b64decode(encrypted)
+    iv = data[:16]
+    ciphertext = data[16:]
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, iv)
+    return unpad(cipher.decrypt(ciphertext), AES.block_size)
 
 def deserialize(binary):
     assert (len(binary) - 4) % 3 == 0
@@ -90,19 +114,19 @@ def receive_data():
     ts_format = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
     app.logger.info(f"Hear from device: {device_id} at {ts_format} ({timestamp})")
 
-    data_bytes = base64.b64decode(data_b64)
-
-    serial_data = heatshrink2.decompress(data_bytes, window_sz2=4, lookahead_sz2=3)
-    raw_data = deserialize(serial_data)
-
-    if not verify_hmac(device_id, timestamp, data_bytes, recv_hmac):
+    if not verify_hmac(device_id, timestamp, data_b64, recv_hmac):
         return jsonify({"error": "Invalid HMAC"}), 403
+
+    data_plain = aes_decrypt(data_b64)
+    serial_data = heatshrink2.decompress(data_plain, window_sz2=4, lookahead_sz2=3)
+    raw_data = deserialize(serial_data)
 
     app.logger.info(f"Valid payload from {device_id} → First 20 bytes: {raw_data[:20]}")
 
     # 保存 csv 文件
     filename = os.path.join(UPLOAD_DIR, f"{device_id}_{timestamp}.csv")
     save_to_csv(raw_data, filename)
+    app.logger.info(f"Saved to {filename}")
 
     return jsonify({"status": "OK"}), 200
 

@@ -12,9 +12,15 @@ import struct
 import heatshrink2
 import numpy as np
 
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+from Crypto.Random import get_random_bytes
+
 # ======= 配置 =======
 DEVICE_ID = "nrf9160-dev001"
 SECRET_KEY = b"sensingteam"
+
+AES_KEY = b'secretkey1234567'
 
 SERVER_URL = "http://54.253.68.173:80/data"
 
@@ -28,7 +34,7 @@ prior = [0.2, 0.1, 0.4, 0.2, 0.1]
 #     (50, 4.47), (100, 5.48), (30, 3.16), (70, 5), (40, 3.87)
 # ]
 uniform_params = [
-    (5, 25), (10, 60), (1, 15), (10, 31), (5, 95)
+    (0, 0), (5, 25), (10, 60), (1, 15), (10, 31), (5, 95)
 ]
 
 # Sample activity
@@ -38,8 +44,8 @@ def sample_activity():
     for i in range(5):
         prob += prior[i]
         if r <= prob:
-            return i
-    return i
+            return i + 1
+    return i + 1
 
 # Simulate 24 hours of activity recognition data
 def generate_24h_data(start_time=None):
@@ -89,6 +95,12 @@ def compress_data(data):
     compressed_data = heatshrink2.compress(data, window_sz2=4, lookahead_sz2=3)
     return compressed_data
 
+def aes_encrypt(data: bytes) -> bytes:
+    iv = get_random_bytes(16)
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, iv)
+    encrypted = cipher.encrypt(pad(data, AES.block_size))
+    return iv + encrypted
+
 def compute_hmac(timestamp: int, device_id: str, payload_bytes: bytes) -> str:
     message = str(timestamp).encode() + device_id.encode() + payload_bytes
     digest = hmac.new(SECRET_KEY, message, hashlib.sha256).digest()
@@ -100,13 +112,13 @@ def send_post():
     start_time, simu_data = generate_24h_data()
     serial_data = serialize_data(start_time, simu_data)
     data_bytes = compress_data(serial_data)
-
-    hmac_value = compute_hmac(timestamp, DEVICE_ID, data_bytes)
+    encrypted = aes_encrypt(data_bytes)
+    hmac_value = compute_hmac(timestamp, DEVICE_ID, encrypted)
 
     body = {
         "device_id": DEVICE_ID,
         "timestamp": timestamp,
-        "data": base64.b64encode(data_bytes).decode(),
+        "data": base64.b64encode(encrypted).decode(),
         "hmac": hmac_value
     }
 
