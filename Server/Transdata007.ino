@@ -49,7 +49,6 @@ const float prior[5] = {0.2, 0.1, 0.4, 0.2, 0.1};
 const int uniform_params[6][2] = {
     {0, 0}, {5, 25}, {10, 60}, {1, 15}, {10, 31}, {5, 95}
 };
-randomSeed(analogRead(A0));
 
 // get timestamp
 time_t getts(HardwareSerial& modem, unsigned long timeoutMs = 2000) {
@@ -195,6 +194,7 @@ void generateData(uint8_t* buffer, size_t buf_size) {
 
 // 🔷 compressData
 void compressData(const uint8_t *buffer, size_t buffer_len) {
+    unsigned long start = micros();
     heatshrink_encoder hse;
     heatshrink_encoder_reset(&hse);
 
@@ -223,6 +223,9 @@ void compressData(const uint8_t *buffer, size_t buffer_len) {
     } while (res == HSER_POLL_MORE);
 
     compressedLen = totalOut;
+    unsigned long duration = micros() - start;
+    Serial.print("Heatshrink execution time (us): ");
+    Serial.println(duration);
 
     Serial.println("Compression finished. First 20 bytes:");
     for (int i = 0; i < 20 && i < compressedLen; i++) {
@@ -233,9 +236,11 @@ void compressData(const uint8_t *buffer, size_t buffer_len) {
     Serial.println();
     Serial.print("Compressed data len: ");
     Serial.println(compressedLen);
+
 }
 
 void aes_encrypt_cbc(const uint8_t *in, size_t inLen) {
+    unsigned long start = micros();
     AES128 aes;
     aes.setKey(AES_KEY, 16);
 
@@ -288,6 +293,9 @@ void aes_encrypt_cbc(const uint8_t *in, size_t inLen) {
     Serial.println(F("AES-CBC encryption done."));
     Serial.print(F("Encrypted length: "));
     Serial.println(aesOutputLen);
+    unsigned long duration = micros() - start;
+    Serial.print("AES execution time (us): ");
+    Serial.println(duration);
 }
 
 // 🔷 buildPayload
@@ -313,7 +321,6 @@ String buildPayload() {
         Serial.println("Message allocation failed!");
         return "";
     }
-
     
     // 3. 填充 message
     size_t offset = 0;
@@ -330,11 +337,16 @@ String buildPayload() {
     Serial.println();
 
     // 4. 计算 HMAC
+    unsigned long start = micros();
     HMAC_SHA256::compute(
         (const uint8_t *)HMAC_KEY, strlen(HMAC_KEY),
         message, messageLen,
         hmacResult
     );
+
+    unsigned long duration = micros() - start;
+    Serial.print("HMAC execution time (us): ");
+    Serial.println(duration);
 
     Serial.print("HMAC: ");
     for (int i = 0; i < 32; i++) {
@@ -439,8 +451,14 @@ void transmit() {
 
     Serial.println("[transmit] Datamode ready. Sending payload…");
 
-    // 2️⃣ 发送 JSON payload
-    Serial1.print(payloadJson);
+    // 2️⃣ 分块发送 payloadJson
+    const int chunkSize = 1024; // 每次发送 1024 字节
+    for (size_t i = 0; i < payloadJson.length(); i += chunkSize) {
+        String chunk = payloadJson.substring(i, i + chunkSize);
+        Serial1.print(chunk); // 注意这里不是 println
+
+        delay(80); // 给 modem 留出发送缓冲的时间
+    }
 
     delay(50); // 确保数据发出
 
@@ -463,6 +481,7 @@ void transmit() {
     }
 
     Serial.println("Transmit done.");
+    Serial1.print("+++"); // Exit Data mode
 }
 
 // 🔷 AT Commands
@@ -485,6 +504,7 @@ void sendAT(String cmd, unsigned long waitTime = 500) {
 
 // 🔷 setup
 void setup() {
+    randomSeed(analogRead(A0));
     Serial.begin(115200);
     while (!Serial) delay(10);
     Serial.println("Ready.");
@@ -508,6 +528,15 @@ void loop() {
             buildPayload();
         } else if (cmd == "transmit") {
             transmit();
+        } else if (cmd == "clear") {
+            binary_len = 0;
+            compressedLen = 0;
+            aesOutputLen = 0;
+            simulatedDataLen = 0;
+            String payloadJson = "";  // JSON字符串
+            payloadLen = 0;
+            timestamp = 0;
+            Serial.println("Cleared.");
         } else {
             sendAT(cmd, 1000);
         }

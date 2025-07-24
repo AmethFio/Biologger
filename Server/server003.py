@@ -33,17 +33,17 @@ def verify_hmac(device_id: str, timestamp: int, data_bytes: str, recv_hmac: str)
         app.logger.warning(f"Unknown device_id: {device_id}")
         return False
 
-    # 拼出来的 message
-    ts_part = str(timestamp).encode()
-    id_part = device_id.encode()
-    data_part = base64.b64decode(data_bytes)
-    message = ts_part + id_part + data_part
+    # # 拼出来的 message
+    # ts_part = str(timestamp).encode()
+    # id_part = device_id.encode()
+    # data_part = base64.b64decode(data_bytes)
+    # message = ts_part + id_part + data_part
 
-    # 打印长度
-    app.logger.info(f"Service-side ts_part length: {len(ts_part)}")
-    app.logger.info(f"Service-side id_part length: {len(id_part)}")
-    app.logger.info(f"Service-side data_part length: {len(data_part)}")
-    app.logger.info(f"Service-side total message length: {len(message)}")
+    # # 打印长度
+    # app.logger.info(f"Service-side ts_part length: {len(ts_part)}")
+    # app.logger.info(f"Service-side id_part length: {len(id_part)}")
+    # app.logger.info(f"Service-side data_part length: {len(data_part)}")
+    # app.logger.info(f"Service-side total message length: {len(message)}")
 
     message = str(timestamp).encode() + device_id.encode() + base64.b64decode(data_bytes)
     expected_digest = hmac.new(key, message, hashlib.sha256).digest()
@@ -128,7 +128,7 @@ def receive_data():
     save_to_csv(raw_data, filename)
     app.logger.info(f"Saved to {filename}")
 
-    return jsonify({"status": "OK"}), 200
+    return jsonify({"status": "success", "message": "Data received"}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80, debug=True)
